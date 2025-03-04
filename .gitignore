@@ -129,3 +129,8 @@ dmypy.json
 .pyre/
 .idea/*
 .env
+
+# My help files
+test.py
+README_example.md
+transermarkt.txt
