@@ -1,3 +1,8 @@
+"""
+Модуль содержит функции для предоставления пользователю
+информацию о самом ценном (дорогом) игроке указанной им команды.
+"""
+
 from typing import List, Any, Dict
 
 from telebot.types import Message, ReplyKeyboardRemove
@@ -5,6 +10,7 @@ from states.value_states import ValuePlayerState
 from loader import bot
 from keyboards.reply import teams_numbers
 from utils import my_requests
+from handlers.custom_handlers.history import record_data
 
 
 def find_teams(team: str) -> Dict[int, List[Any]]:
@@ -18,13 +24,15 @@ def find_teams(team: str) -> Dict[int, List[Any]]:
     querystring = {"query": team, "domain": "com"}
     json_data = my_requests.api_request('search', querystring)
 
-    data_team = dict()
-    number = 1
-    for team in json_data['clubs']:
-        data_team[number] = [team['id'], team['name']]
-        number += 1
+    if json_data:
+        data_team = dict()
+        number = 1
+        for team in json_data['clubs']:
+            data_team[number] = [team['id'], team['name']]
+            number += 1
+        return data_team
 
-    return data_team
+    return json_data
 
 
 def find_all_players(team_id: str) -> dict[int, List[Any]]:
@@ -43,6 +51,13 @@ def find_all_players(team_id: str) -> dict[int, List[Any]]:
 
 @bot.message_handler(commands=['most_value'])
 def user_team(message: Message) -> None:
+    """
+    Обрабатывает команду /most_value. Запрашивает у пользователя
+    наименование футбольной команды.
+
+    :param message: сообщение пользователя.
+    """
+
     bot.set_state(message.from_user.id, ValuePlayerState.teams,
                   message.chat.id)
     bot.send_message(message.from_user.id, 'Введи интересующую тебя '
@@ -51,31 +66,52 @@ def user_team(message: Message) -> None:
 
 @bot.message_handler(state=ValuePlayerState.teams)
 def get_teams(message: Message) -> None:
+    """
+    Получает от API список подходящих по введенному названию команд и
+    выводит пользователю для дальнейшего выбора.
+    Для выбора команд используется reply клавиатура.
+
+    :param message: сообщение пользователя.
+    """
     bot.set_state(message.from_user.id, ValuePlayerState.number,
                   message.chat.id)
     teams = find_teams(message.text)
-    text = ''
 
-    for number, team in teams.items():
-        text += str(number) + '. ' + team[1] + '\n'
+    record_data(message.from_user.id, message.from_user.username,
+                'most_value player in {team}'.format(team=message.text))
 
-    text.rstrip('\n')
-    bot.send_message(message.from_user.id, text)
-    bot.send_message(message.from_user.id, 'Введи номер интересующей тебя '
-                                           'команды.',
-                     reply_markup=teams_numbers.create_numbers(len(teams)))
-    bot.add_data(message.from_user.id, message.chat.id, teams=teams)
+    if teams:
+        text = ''
+        for number, team in teams.items():
+            text += str(number) + '. ' + team[1] + '\n'
+
+        text.rstrip('\n')
+        bot.send_message(message.from_user.id, text)
+        bot.send_message(message.from_user.id, 'Введи номер интересующей тебя '
+                                               'команды.',
+                         reply_markup=teams_numbers.create_numbers(len(teams)))
+        bot.add_data(message.from_user.id, message.chat.id, teams=teams)
+    else:
+        bot.send_message(message.from_user.id, 'Произошла ошибка: превышено '
+                                               'время ожидания выполнения '
+                                               'запроса к API.')
 
 
 @bot.message_handler(state=ValuePlayerState.number)
 def get_player(message: Message) -> None:
+    """
+    По номеру (id) выбранной пользователем команды получает список
+    всех игроков, определяет самого дорого игрока и выводит пользователю.
+
+    :param message: сообщение пользователя.
+    """
     with bot.retrieve_data(message.from_user.id) as data:
-        if int(message.text) <= len(data['teams']):
-            id_team = data['teams'][int(message.text)][0]
-            team_name = data['teams'][int(message.text)][1]
+        id_team = data['teams'][int(message.text)][0]
+        team_name = data['teams'][int(message.text)][1]
 
-            players = find_all_players(id_team)
+        players = find_all_players(id_team)
 
+        if players:
             data['name'] = players['squad'][0]['name']
             data['price'] = players['squad'][0]['marketValue']['value']
             data['age'] = players['squad'][0]['age']
@@ -98,7 +134,8 @@ def get_player(message: Message) -> None:
                              reply_markup=ReplyKeyboardRemove())
             bot.delete_state(message.from_user.id, message.chat.id)
         else:
-            bot.send_message(message.from_user.id, 'Вы ввели неверный '
-                                                   'номер команды.',
-                             reply_markup=ReplyKeyboardRemove())
+            bot.send_message(message.from_user.id,
+                             'Произошла ошибка: превышено '
+                             'время ожидания выполнения '
+                             'запроса к API.')
             bot.delete_state(message.from_user.id, message.chat.id)

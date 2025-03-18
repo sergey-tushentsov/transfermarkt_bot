@@ -1,3 +1,7 @@
+"""
+Модуль содержит функцию, выполняющую запрос к API.
+"""
+
 from typing import Dict, Any
 
 import requests
@@ -21,6 +25,10 @@ def api_request(method: str, params: Dict[str, Any]):
         "x-rapidapi-host": "transfermarket.p.rapidapi.com"
     }
 
-    response = requests.get(url, headers=headers, params=params, timeout=40)
-    if response.status_code == requests.codes.ok:
-        return response.json()
+    try:
+        response = requests.get(url, headers=headers, params=params,
+                                timeout=30)
+        if response.status_code == requests.codes.ok:
+            return response.json()
+    except requests.exceptions.Timeout:
+        return None
