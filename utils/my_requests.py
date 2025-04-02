@@ -7,7 +7,7 @@ from typing import Dict, Any
 import requests
 
 
-def api_request(method: str, params: Dict[str, Any]):
+def api_request(method: str, params: Dict[str, Any]) -> Any:
     """
     Вернуть десереализированный ответ на запрос к API.
 

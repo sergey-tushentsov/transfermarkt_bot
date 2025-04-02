@@ -13,7 +13,7 @@ from utils import my_requests
 from handlers.custom_handlers.history import record_data
 
 
-def find_teams(team: str) -> Dict[int, List[Any]]:
+def find_teams(team: str) -> Any:
     """
     Вернуть словарь с id и наименованием подходящих команд.
 
@@ -25,12 +25,15 @@ def find_teams(team: str) -> Dict[int, List[Any]]:
     json_data = my_requests.api_request('search', querystring)
 
     if json_data:
-        data_team = dict()
-        number = 1
-        for team in json_data['clubs']:
-            data_team[number] = [team['id'], team['name']]
-            number += 1
-        return data_team
+        if json_data['count']['clubs'] != 0:
+            data_team = dict()
+            number = 1
+            for team in json_data['clubs']:
+                data_team[number] = [team['id'], team['name']]
+                number += 1
+            return data_team
+        else:
+            return 'no data'
 
     return json_data
 
@@ -81,20 +84,27 @@ def get_teams(message: Message) -> None:
                 'most_value player in {team}'.format(team=message.text))
 
     if teams:
-        text = ''
-        for number, team in teams.items():
-            text += str(number) + '. ' + team[1] + '\n'
+        if teams != 'no data':
+            text = ''
+            for number, team in teams.items():
+                text += str(number) + '. ' + team[1] + '\n'
 
-        text.rstrip('\n')
-        bot.send_message(message.from_user.id, text)
-        bot.send_message(message.from_user.id, 'Введи номер интересующей тебя '
-                                               'команды.',
-                         reply_markup=teams_numbers.create_numbers(len(teams)))
-        bot.add_data(message.from_user.id, message.chat.id, teams=teams)
+            text.rstrip('\n')
+            bot.send_message(message.from_user.id, text)
+            bot.send_message(message.from_user.id, 'Введи номер интересующей '
+                                                   'тебя команды.',
+                             reply_markup=teams_numbers.create_numbers(
+                                 len(teams)))
+            bot.add_data(message.from_user.id, message.chat.id, teams=teams)
+        else:
+            bot.send_message(message.from_user.id, 'Запрашиваемый Вами клуб '
+                                                   'отсутствует.')
+            bot.delete_state(message.from_user.id, message.chat.id)
     else:
         bot.send_message(message.from_user.id, 'Произошла ошибка: превышено '
                                                'время ожидания выполнения '
                                                'запроса к API.')
+        bot.delete_state(message.from_user.id, message.chat.id)
 
 
 @bot.message_handler(state=ValuePlayerState.number)
@@ -105,37 +115,45 @@ def get_player(message: Message) -> None:
 
     :param message: сообщение пользователя.
     """
+
     with bot.retrieve_data(message.from_user.id) as data:
-        id_team = data['teams'][int(message.text)][0]
-        team_name = data['teams'][int(message.text)][1]
+        if message.text.isdigit() and int(message.text) <= len(data['teams']):
+            id_team = data['teams'][int(message.text)][0]
+            team_name = data['teams'][int(message.text)][1]
 
-        players = find_all_players(id_team)
+            players = find_all_players(id_team)
 
-        if players:
-            data['name'] = players['squad'][0]['name']
-            data['price'] = players['squad'][0]['marketValue']['value']
-            data['age'] = players['squad'][0]['age']
+            if players:
+                data['name'] = players['squad'][0]['name']
+                data['price'] = players['squad'][0]['marketValue']['value']
+                data['age'] = players['squad'][0]['age']
 
-            for player in players['squad'][1:]:
-                if data['price'] < player['marketValue']['value']:
-                    data['price'] = player['marketValue']['value']
-                    data['name'] = player['name']
-                    data['age'] = player['age']
+                for player in players['squad'][1:]:
+                    if data['price'] < player['marketValue']['value']:
+                        data['price'] = player['marketValue']['value']
+                        data['name'] = player['name']
+                        data['age'] = player['age']
 
-            text = ('Самый ценный игрок в команде {team} - {name}.\n'
-                    'Стоимость: {price} млн евро\n'
-                    'Возраст: {age} года \\ лет\n'.format(
-                team=team_name,
-                name=data['name'],
-                price=f"{data['price'] / 1_000_000:.3f}",
-                age=data['age']))
+                text = ('Самый ценный игрок в команде {team} - {name}.\n'
+                        'Стоимость: {price} млн евро\n'
+                        'Возраст: {age} года \\ лет\n'.format(
+                    team=team_name,
+                    name=data['name'],
+                    price=f"{data['price'] / 1_000_000:.3f}",
+                    age=data['age']))
 
-            bot.send_message(message.from_user.id, text,
-                             reply_markup=ReplyKeyboardRemove())
-            bot.delete_state(message.from_user.id, message.chat.id)
+                bot.send_message(message.from_user.id, text,
+                                 reply_markup=ReplyKeyboardRemove())
+                bot.delete_state(message.from_user.id, message.chat.id)
+            else:
+                bot.send_message(message.from_user.id,
+                                 'Произошла ошибка: превышено '
+                                 'время ожидания выполнения '
+                                 'запроса к API.',
+                                 reply_markup=ReplyKeyboardRemove())
+                bot.delete_state(message.from_user.id, message.chat.id)
         else:
-            bot.send_message(message.from_user.id,
-                             'Произошла ошибка: превышено '
-                             'время ожидания выполнения '
-                             'запроса к API.')
+            bot.send_message(message.from_user.id, 'Вы ввели текст или '
+                                                   'неверный номер команды.',
+                             reply_markup=ReplyKeyboardRemove())
             bot.delete_state(message.from_user.id, message.chat.id)
